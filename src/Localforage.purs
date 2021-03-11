@@ -1,5 +1,6 @@
 module Localforage
   ( LocalforageConfig
+  , LocalforageConfigRep
   , Localforage
   , LOCALFORAGE_DRIVERS(..)
   , createInstance
@@ -12,32 +13,33 @@ module Localforage
   ) where
 
 import Prelude
+
 import Data.Either (Either(..))
 import Effect (Effect)
 import Effect.Aff (Aff, Error, attempt, error, makeAff, nonCanceler)
-import Foreign (Foreign, unsafeToForeign)
-import Foreign.Generic (class Encode, encode)
+import Foreign (Foreign)
 
 foreign import getLocalforageDriver :: String -> Foreign
 
+
 foreign import data Localforage :: Type
-instance encodeLocalforage :: Encode Localforage where
-  encode = unsafeToForeign
 
 data LOCALFORAGE_DRIVERS = WEBSQL | INDEXEDDB | LOCALSTORAGE
-instance encodeLocalforageDrivers :: Encode LOCALFORAGE_DRIVERS where
-  encode WEBSQL = getLocalforageDriver "websql"
-  encode INDEXEDDB = getLocalforageDriver "indexeddb"
-  encode LOCALSTORAGE = getLocalforageDriver "localstorage"
+encodeDriver :: LOCALFORAGE_DRIVERS -> Foreign
+encodeDriver WEBSQL = getLocalforageDriver "websql"
+encodeDriver INDEXEDDB = getLocalforageDriver "indexeddb"
+encodeDriver LOCALSTORAGE = getLocalforageDriver "localstorage"
 
-type LocalforageConfig =
-  { driver :: LOCALFORAGE_DRIVERS
+type LocalforageConfigRep a =
+  { driver :: a
   , name :: String
   , version :: Number
   , size :: Int -- Size of database, in bytes. WebSQL-only for now.
   , storeName :: String -- // Should be alphanumeric, with underscores.
   , description :: String
   }
+
+type LocalforageConfig = LocalforageConfigRep LOCALFORAGE_DRIVERS
 
 defaultLocalforageConfig :: LocalforageConfig
 defaultLocalforageConfig = {
@@ -49,7 +51,10 @@ defaultLocalforageConfig = {
   description: ""
 }
 
-foreign import _createInstance :: Foreign -> Effect Localforage
+encodeConfig :: LocalforageConfig -> LocalforageConfigRep Foreign
+encodeConfig cfg = cfg { driver = encodeDriver cfg.driver }
+
+foreign import _createInstance :: LocalforageConfigRep Foreign -> Effect Localforage
 foreign import _dropInstance :: (Effect Unit) -> (String -> Effect Unit) -> Localforage -> Effect Unit
 foreign import _keys :: ((Array String) -> Effect Unit) -> (String -> Effect Unit) -> Localforage -> Effect Unit
 foreign import _clear :: (Effect Unit) -> (String -> Effect Unit) -> Localforage -> Effect Unit
@@ -59,7 +64,7 @@ foreign import _removeItem :: (Effect Unit) -> (String -> Effect Unit) -> Localf
 
 -- | Creates a new instance.
 createInstance :: LocalforageConfig -> Effect Localforage
-createInstance = _createInstance <<< encode
+createInstance = _createInstance <<< encodeConfig
 
 -- | When invoked with no arguments, it drops the “store” of the current instance.
 dropInstance :: Localforage -> Aff (Either Error Unit)
